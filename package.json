@@ -1,0 +1,15 @@
+{
+  "name": "pdf-secret-inspector",
+  "version": "1.0.0",
+  "description": "A comprehensive solution for detecting secrets in PDF files uploaded to ChatGPT and other AI platforms. This project consists of a Chrome extension that captures PDF uploads and a Node.js backend service that inspects files for sensitive information using Prompt Security's API.",
+  "main": "create-test-pdf.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "jspdf": "^3.0.3"
+  }
+}
