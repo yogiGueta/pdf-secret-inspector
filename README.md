@@ -150,7 +150,7 @@ curl -X POST -F "pdf=@secrets-test.pdf" http://localhost:3000/api/inspect-pdf
 
 **Extension Testing**
 1. Go to ChatGPT
-2. Try uploading the test PDFs
+2. Try uploading the test PDFs (you can use the files from the 'test-files' folder)
 3. Check browser console (F12) for any errors
 4. Should see popup notifications
 
