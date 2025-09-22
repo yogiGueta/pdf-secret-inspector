@@ -172,26 +172,30 @@ class SecretDetectorService {
    */
   private parsePromptSecurityResponse(data: PromptSecurityResponse): DetectedSecret[] {
     const secrets: DetectedSecret[] = [];
-    
-    // Check if the API found secrets
-    if (data.result?.prompt?.findings?.Secrets && Array.isArray(data.result.prompt.findings.Secrets)) {
-      const confidenceScore = data.result?.prompt?.scores?.Secrets?.score || 0.95;
 
-      // Check if action is "block" - if so, force CRITICAL risk level
-      const isBlocked = data.result?.action === 'block' || data.result?.prompt.action === 'block';
+    // Be defensive about API response shape
+    const anyData: any = data as any;
+    const resultPrompt = anyData?.result?.prompt ?? anyData?.prompt ?? {};
+    const findings = Array.isArray(resultPrompt?.findings?.Secrets)
+      ? resultPrompt.findings.Secrets
+      : [];
+    const action = anyData?.result?.action ?? resultPrompt?.action;
+    const confidenceScore: number = (resultPrompt?.scores?.Secrets?.score ?? 0.95) as number;
+    const isBlocked = action === 'block';
 
-      data.result.prompt.findings.Secrets.forEach(secret => {
-        secrets.push({
-          type: secret.entity_type || 'Unknown',
-          description: `${secret.entity_type} detected in ${secret.category}`,
-          value: this.maskSecret(secret.entity || ''),
-          location: 0, // API doesn't provide location
-          confidence: confidenceScore,
-          riskLevel: isBlocked ? 'CRITICAL' : this.mapCategoryToRiskLevel(secret.category, secret.entity_type),
-          source: 'prompt_security'
-        });
+    findings.forEach((secret: any) => {
+      const entityType = secret?.entity_type || 'Unknown';
+      const category = secret?.category || 'Other';
+      secrets.push({
+        type: entityType,
+        description: `${entityType} detected${category ? ` in ${category}` : ''}`,
+        value: this.maskSecret(secret?.entity || ''),
+        location: 0, // API doesn't provide location
+        confidence: confidenceScore,
+        riskLevel: isBlocked ? 'CRITICAL' : this.mapCategoryToRiskLevel(category, entityType),
+        source: 'prompt_security'
       });
-    }
+    });
 
     return secrets;
   }

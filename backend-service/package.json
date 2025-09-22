@@ -8,7 +8,7 @@
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
     "dev:watch": "nodemon --exec ts-node src/server.ts",
-    "test": "jest",
+    "test": "npm run build && jest",
     "test:watch": "jest --watch",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint src/ --ext .ts --fix",

@@ -23,7 +23,7 @@ Ever had that "oh crap" moment after uploading a PDF with passwords or API keys 
 cd backend-service
 npm install
 cp .env.example .env
-# Optional: Add your Prompt Security API key to .env (works without it too)
+# Required: Set PROMPT_SECURITY_APP_ID in .env to your Prompt Security key
 npm run dev
 ```
 
@@ -37,14 +37,10 @@ Backend starts on `http://localhost:3000` - you'll see a "Server running" messag
 5. You should see "PDF Secret Inspector" in your extensions
 
 ### 3. Test It Out
-```bash
-# This creates test PDFs for you
-node create-test-pdf.js
 
-# Now go to ChatGPT and try uploading:
-# - clean-test.pdf (should say "all good")
-# - secrets-test.pdf (should warn you about secrets)
-```
+Use the sample PDFs in test-files/:
+- test-files/clean-document.pdf (should say "all good")
+- test-files/document-with-secrets.pdf (should warn you about secrets)
 
 ## How It Actually Works
 
@@ -144,15 +140,39 @@ The extension watches for file uploads on ChatGPT, Claude, and Bard, sends PDFs 
 curl http://localhost:3000/api/health
 # Should return {"status": "healthy"}
 
-curl -X POST -F "pdf=@secrets-test.pdf" http://localhost:3000/api/inspect-pdf
+curl -X POST -F "pdf=@test-files/document-with-secrets.pdf" http://localhost:3000/api/inspect-pdf
 # Should return detected secrets
 ```
 
 **Extension Testing**
-1. Go to ChatGPT
-2. Try uploading the test PDFs (you can use the files from the 'test-files' folder)
+1. Go to Claude.ai (recommended - free file uploads)
+2. Try uploading the test PDFs from test-files/
 3. Check browser console (F12) for any errors
 4. Should see popup notifications
+
+**Note on Platform Testing**
+This project was primarily tested on Claude.ai because:
+- Claude allows unlimited file uploads on the free tier
+- ChatGPT requires premium subscription for file uploads
+- For full ChatGPT testing, you'll need ChatGPT Plus
+
+**Current Test Coverage & What's Missing**
+```bash
+cd backend-service
+npm test  # Runs existing unit tests
+```
+
+Current tests cover:
+- ✅ Secret detection with Prompt Security API
+- ✅ Local regex fallback when API fails
+- ✅ Risk level mapping and defensive parsing
+
+**Still Need:**
+- Component tests for the Chrome extension (content script, background script)
+- Integration tests for the full upload flow (extension → backend → response)
+- End-to-end tests with real PDF files and browser automation
+- Error handling tests (network failures, malformed PDFs, etc.)
+- Performance tests with large files and concurrent uploads
 
 ## When Things Go Wrong
 

@@ -1,10 +1,10 @@
 /**
  * Content Script for PDF Secret Inspector
- * 
+ *
  * Monitors file uploads on AI platforms and intercepts PDF files.
- * Had to use MutationObserver because these sites are SPAs and 
+ * Had to use MutationObserver because these sites are SPAs and
  * the file inputs are dynamically created.
- * 
+ *
  * Note: This is a bit hacky but works across different AI platforms.
  * Each platform has slightly different DOM structures.
  */
@@ -38,9 +38,17 @@ const PLATFORM_CONFIG = {
   }
 };
 
-// Get current platform config
-const currentPlatform = PLATFORM_CONFIG[window.location.hostname];
-if (!currentPlatform) {
+// Platform adapters for site-specific behavior (selectors, drop zones)
+const PLATFORM_ADAPTERS = {
+  'chat.openai.com': { name: 'ChatGPT', fileInputSelector: 'input[type="file"]', dropZoneSelector: 'body' },
+  'chatgpt.com': { name: 'ChatGPT', fileInputSelector: 'input[type="file"]', dropZoneSelector: 'body' },
+  'claude.ai': { name: 'Claude', fileInputSelector: 'input[type="file"]', dropZoneSelector: 'body' },
+  'bard.google.com': { name: 'Bard', fileInputSelector: 'input[type="file"]', dropZoneSelector: 'body' }
+};
+
+// Select current platform adapter
+const currentAdapter = PLATFORM_ADAPTERS[window.location.hostname];
+if (!currentAdapter) {
   console.log('PDF Secret Inspector: Unsupported platform');
 }
 
@@ -52,17 +60,18 @@ const processedFiles = new Map();
  * Uses MutationObserver to watch for file input changes
  */
 function initializeFileMonitoring() {
-  console.log(`PDF Secret Inspector: Initializing file monitoring for ${currentPlatform.name}`);
+  if (!currentAdapter) return;
+  console.log(`PDF Secret Inspector: Initializing file monitoring for ${currentAdapter.name}`);
 
   // Watch for file input changes
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.type === 'childList') {
         // Check for new file inputs (but don't log every time)
-        const fileInputs = document.querySelectorAll(currentPlatform.fileInputSelector);
+        const fileInputs = document.querySelectorAll(currentAdapter.fileInputSelector);
         fileInputs.forEach(attachFileListener);
       }
-      
+
       // Also watch for attribute changes that might indicate input replacement
       if (mutation.type === 'attributes' && mutation.target.matches && mutation.target.matches('input[type="file"]')) {
         attachFileListener(mutation.target);
@@ -79,13 +88,13 @@ function initializeFileMonitoring() {
   });
 
   // Also check existing file inputs
-  const existingInputs = document.querySelectorAll(currentPlatform.fileInputSelector);
+  const existingInputs = document.querySelectorAll(currentAdapter.fileInputSelector);
   console.log(`PDF Secret Inspector: Found ${existingInputs.length} existing file inputs`);
   existingInputs.forEach(attachFileListener);
-  
+
   // Periodically re-scan for new inputs (fallback) - but less frequently
   setInterval(() => {
-    const allInputs = document.querySelectorAll(currentPlatform.fileInputSelector);
+    const allInputs = document.querySelectorAll(currentAdapter.fileInputSelector);
     allInputs.forEach((input) => {
       if (!input.dataset.pdfInspectorAttached) {
         console.log('PDF Secret Inspector: Found unattached file input, attaching listener');
@@ -93,7 +102,38 @@ function initializeFileMonitoring() {
       }
     });
   }, 5000);
+
+  // Attach drag-and-drop capture
+  attachDragAndDrop(currentAdapter);
 }
+
+/**
+ * Attach page-level drag-and-drop handlers to capture PDFs
+ */
+function attachDragAndDrop(adapter) {
+  try {
+    const zone = document.querySelector(adapter.dropZoneSelector) || document.body;
+    if (!zone || zone.dataset.pdfInspectorDndAttached) return;
+    zone.dataset.pdfInspectorDndAttached = 'true';
+
+    zone.addEventListener('dragover', (e) => {
+      try { e.preventDefault(); } catch (_) {}
+    }, { passive: false });
+
+    zone.addEventListener('drop', async (e) => {
+      try { e.preventDefault(); } catch (_) {}
+      const files = Array.from(e.dataTransfer?.files || []);
+      for (const file of files) {
+        if (file && file.type === 'application/pdf') {
+          await handlePDFUpload(file, null);
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('PDF Secret Inspector: Failed to attach drag-and-drop', err);
+  }
+}
+
 
 /**
  * Attach event listener to file input
@@ -103,9 +143,11 @@ function attachFileListener(fileInput) {
   if (fileInput.dataset.pdfInspectorAttached) {
     return;
   }
-  
+
   fileInput.dataset.pdfInspectorAttached = 'true';
-  
+
+
+
   fileInput.addEventListener('change', async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -124,11 +166,11 @@ function attachFileListener(fileInput) {
 async function handlePDFUpload(file, inputElement) {
   // Create a unique key for this upload attempt (include timestamp to allow re-uploads)
   const fileKey = `${file.name}-${file.size}-${file.lastModified}-${Date.now()}`;
-  
+
   // Only prevent duplicate processing within a short time window (reduced from 2 seconds to 1)
   const recentKey = `${file.name}-${file.size}-${file.lastModified}`;
   const now = Date.now();
-  
+
   // Check if we processed this exact file very recently (within 1 second)
   if (processedFiles.has(recentKey)) {
     const lastProcessed = processedFiles.get(recentKey);
@@ -137,22 +179,24 @@ async function handlePDFUpload(file, inputElement) {
       return;
     }
   }
-  
+
   // Mark as being processed
   processedFiles.set(recentKey, now);
 
   console.log(`PDF Secret Inspector: Processing ${file.name}`);
-  
+
+
+
   // Show processing indicator
   showProcessingIndicator(true);
-  
+
   try {
     // Send file to background script for inspection
     const result = await chrome.runtime.sendMessage({
       action: 'inspectPDF',
       file: await fileToBase64(file),
       filename: file.name,
-      platform: currentPlatform.name
+      platform: currentAdapter.name
     });
 
     if (result.success) {
@@ -166,7 +210,7 @@ async function handlePDFUpload(file, inputElement) {
     showNotification('Error processing PDF', 'error');
   } finally {
     showProcessingIndicator(false);
-    
+
     // Clean up the processed file marker after a shorter delay (2 seconds instead of 5)
     setTimeout(() => {
       processedFiles.delete(recentKey);
@@ -179,27 +223,16 @@ async function handlePDFUpload(file, inputElement) {
  */
 function handleInspectionResult(result, file, inputElement) {
   const { secretsFound, riskLevel, secrets } = result;
-  
+
   if (secretsFound > 0) {
-    // Show warning for files with secrets
-    const message = `⚠️ ${secretsFound} potential secret(s) detected in ${file.name}`;
-    const details = secrets.map(s => `• ${s.type}: ${s.description}`).join('\n');
-    
-    const userChoice = confirm(
-      `${message}\n\nRisk Level: ${riskLevel}\n\nDetails:\n${details}\n\nDo you want to continue with the upload?`
-    );
-    
-    if (!userChoice) {
-      // Clear the file input to prevent upload
-      inputElement.value = '';
-      showNotification('Upload cancelled - secrets detected', 'warning');
-      return;
-    }
+    // Non-blocking alert as per assignment: notify but do not block or clear input
+    const message = `⚠️ ${secretsFound} potential secret(s) detected in ${file.name} (Risk: ${riskLevel})`;
+    showNotification(message, 'warning');
   }
-  
+
   // Log the result
   console.log('PDF Secret Inspector: Inspection complete', result);
-  
+
   if (secretsFound === 0) {
     showNotification('PDF is clean - no secrets detected', 'success');
   }
@@ -222,7 +255,7 @@ function fileToBase64(file) {
  */
 function showProcessingIndicator(show) {
   let indicator = document.getElementById('pdf-inspector-indicator');
-  
+
   if (show && !indicator) {
     indicator = document.createElement('div');
     indicator.id = 'pdf-inspector-indicator';
@@ -255,7 +288,7 @@ function showNotification(message, type = 'info') {
     error: '#dc3545',
     info: '#007bff'
   };
-  
+
   const notification = document.createElement('div');
   notification.style.cssText = `
     position: fixed;
@@ -272,9 +305,9 @@ function showNotification(message, type = 'info') {
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   `;
   notification.textContent = message;
-  
+
   document.body.appendChild(notification);
-  
+
   // Auto-remove after 5 seconds
   setTimeout(() => {
     if (notification.parentNode) {
