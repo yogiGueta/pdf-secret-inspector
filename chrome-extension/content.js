@@ -191,12 +191,19 @@ async function handlePDFUpload(file, inputElement) {
   showProcessingIndicator(true);
 
   try {
+    // Ensure extension messaging is available
+    if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') {
+      console.warn('PDF Secret Inspector: chrome.runtime.sendMessage unavailable in this context');
+      showNotification('Extension messaging unavailable. Please reload the page and extension.', 'error');
+      return;
+    }
+
     // Send file to background script for inspection
     const result = await chrome.runtime.sendMessage({
       action: 'inspectPDF',
       file: await fileToBase64(file),
       filename: file.name,
-      platform: currentAdapter.name
+      platform: currentAdapter?.name || 'Unknown'
     });
 
     if (result.success) {
